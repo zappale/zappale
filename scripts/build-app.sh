@@ -44,7 +44,7 @@ else
     # 正式证书签名：hardened runtime + 时间戳（公证 notarization 的前置要求）
     # Team 信息已包含在证书身份内，无需另行传参
     codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "${APP_DIR}"
-    codesign verify --strict "${APP_DIR}"
+    codesign --verify --strict --verbose=2 "${APP_DIR}"
 fi
 
 echo "✔ 已生成 ${APP_DIR}（签名身份：${SIGN_IDENTITY}）"
