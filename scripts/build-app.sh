@@ -1,8 +1,7 @@
 #!/bin/bash
 # 构建 zappale.app：swift build → 组装 bundle → 签名。
 # 默认 ad-hoc 签名（本地开发）；CI 中可通过环境变量注入正式身份：
-#   SIGN_IDENTITY  证书 Common Name，如 "Apple Development: ..." 或 "Developer ID Application: ..."（默认 "-" 即 ad-hoc）
-#   APPLE_TEAM_ID  可选，10 位 Team ID，非 Developer ID 证书时补充 codesign --team
+#   SIGN_IDENTITY  证书 Common Name，如 "Developer ID Application: ..."（默认 "-" 即 ad-hoc）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -43,11 +42,8 @@ if [[ "$SIGN_IDENTITY" == "-" ]]; then
     codesign --force --sign - "${APP_DIR}"
 else
     # 正式证书签名：hardened runtime + 时间戳（公证 notarization 的前置要求）
-    CODESIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --options runtime --timestamp)
-    if [[ -n "${APPLE_TEAM_ID:-}" ]]; then
-        CODESIGN_ARGS+=(--team "${APPLE_TEAM_ID}")
-    fi
-    codesign "${CODESIGN_ARGS[@]}" "${APP_DIR}"
+    # Team 信息已包含在证书身份内，无需另行传参
+    codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "${APP_DIR}"
     codesign verify --strict "${APP_DIR}"
 fi
 
