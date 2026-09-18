@@ -206,6 +206,12 @@ final class AppCore: NSObject, ObservableObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         clearRow.target = self
+        let newNoteRow = menu.addItem(
+            withTitle: L10n.t("新建笔记", "New Note"),
+            action: #selector(newNoteFromMenu),
+            keyEquivalent: "n"
+        )
+        newNoteRow.target = self
 
         menu.addItem(.separator())
         let settingsRow = menu.addItem(
@@ -351,6 +357,7 @@ final class AppCore: NSObject, ObservableObject, NSApplicationDelegate {
     @objc private func openClipboardHistory() { showClipboardHistory() }
     @objc private func openSettings() { showSettings() }
     @objc private func rescanApps() { launcher.rescan() }
+    @objc private func newNoteFromMenu() { createNote() }
     @objc private func clearClipboardHistory() {
         clipboardStore?.clear()
         clipboardStore?.save()

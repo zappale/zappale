@@ -16,10 +16,11 @@ final class SettingsWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "zappale 设置"
+        window.title = L10n.t("zappale 设置", "zappale Settings")
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.center()
+        window.contentMinSize = NSSize(width: 680, height: 460)
         window.contentView = NSHostingView(
             rootView: SettingsView(core: core)
         )

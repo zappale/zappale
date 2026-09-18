@@ -41,7 +41,11 @@ final class PaletteWindowController {
         panel.worksWhenModal = true
 
         let root = PaletteView(state: state)
-        panel.contentView = NSHostingView(rootView: root)
+        let hostingView = NSHostingView(rootView: root)
+        // 关键不变量（对齐 tinycast）：SwiftUI 不得驱动面板尺寸，
+        // 否则内容变化（如长副标题换行）会把窗口顶来顶去。
+        hostingView.sizingOptions = []
+        panel.contentView = hostingView
 
         state.onShouldHide = { [weak self] in self?.hide() }
         state.onPasteRequested = { [weak self] item in
@@ -52,12 +56,18 @@ final class PaletteWindowController {
         }
 
         // 失焦即收起：启动器的心智模型是"呼出—完成—消失"。
+        // 右键菜单跟踪开始的瞬间面板会短暂 resign key——直接收起会把
+        // 刚打开的菜单一起关掉。防抖 150ms 后复检：仍是面板失焦才真正隐藏。
         NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification,
             object: panel,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.hide() }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                guard let self, self.panel.isVisible, !self.panel.isKeyWindow else { return }
+                self.hide()
+            }
         }
     }
 
@@ -90,7 +100,23 @@ final class PaletteWindowController {
 
     func hide() {
         guard panel.isVisible else { return }
-        panel.orderOut(nil)
+        // 快速淡出后收起；面板不可见时 orderOut 幂等
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.1
+            context.completionHandler = { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if !self.panel.isKeyWindow {
+                        self.panel.orderOut(nil)
+                        self.panel.alphaValue = 1
+                    } else {
+                        // 复检时面板又拿到焦点（如菜单选择触发了动作）——不关
+                        self.panel.alphaValue = 1
+                    }
+                }
+            }
+            panel.animator().alphaValue = 0
+        })
     }
 
     /// 隐藏面板后执行粘贴回注：面板先收起，目标应用回到前台，
@@ -186,10 +212,13 @@ final class PaletteWindowController {
         guard let screen else { return }
         let size = panel.frame.size
         let visible = screen.visibleFrame
-        let origin = NSPoint(
+        var origin = NSPoint(
             x: visible.midX - size.width / 2,
             y: visible.midY - size.height / 2 + visible.height * 0.12
         )
+        // 钳制：小屏/分屏下保证面板完整可见
+        origin.x = min(max(origin.x, visible.minX), visible.maxX - size.width)
+        origin.y = min(max(origin.y, visible.minY), visible.maxY - size.height)
         panel.setFrameOrigin(origin)
     }
 }

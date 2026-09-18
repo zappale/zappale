@@ -26,6 +26,20 @@ enum PaletteMode: String, CaseIterable {
     /// 是否出现在模式胶囊里（chat 不出现）。
     var showsInSwitcher: Bool { self != .chat }
 
+    /// Tab 实际去向（剪贴板禁用时跳过）。
+    func resolvedNext(clipboardEnabled: Bool) -> PaletteMode {
+        var target = next
+        if target == .clipboard, !clipboardEnabled {
+            target = target.next
+        }
+        return target
+    }
+
+    /// 底栏 Tab 提示用：下一屏短名。
+    func nextTabLabel(clipboardEnabled: Bool) -> String {
+        resolvedNext(clipboardEnabled: clipboardEnabled).displayName
+    }
+
     /// Tab 循环顺序：应用 → 剪贴板 → 文件 → 表情 → 应用。
     var next: PaletteMode {
         switch self {

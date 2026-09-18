@@ -9,6 +9,9 @@ import ZappaleCore
 struct PaletteView: View {
     @Bindable var state: PaletteState
     @FocusState private var fieldFocused: Bool
+    @State private var entranceScale: CGFloat = 0.985
+
+    private var bodyTap: some Gesture { TapGesture() }
 
     var body: some View {
         let _ = state.languageVersion // 语言切换时强制重渲染
@@ -20,6 +23,12 @@ struct PaletteView: View {
         }
         .frame(width: PaletteMetrics.width, height: PaletteMetrics.height)
         .background(PaletteBackground(reducedEffects: state.core?.settings.reducedVisualEffects == true))
+        .scaleEffect(entranceScale)
+        .animation(
+            state.core?.settings.reducedVisualEffects == true ? nil
+                : .spring(response: 0.22, dampingFraction: 0.9),
+            value: state.focusToken
+        )
         .clipShape(RoundedRectangle(cornerRadius: PaletteMetrics.cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: PaletteMetrics.cornerRadius, style: .continuous)
@@ -27,7 +36,18 @@ struct PaletteView: View {
         )
         .shadow(color: .black.opacity(0.30), radius: 24, y: 8)
         .onAppear { fieldFocused = true }
-        .onChange(of: state.focusToken, initial: true) { _, _ in fieldFocused = true }
+        .onChange(of: state.focusToken, initial: true) { _, _ in
+            fieldFocused = true
+            // 每次呼出：轻微缩放入场（减弱视觉时跳过）
+            if state.core?.settings.reducedVisualEffects != true {
+                entranceScale = 0.985
+                DispatchQueue.main.async {
+                    entranceScale = 1
+                }
+            } else {
+                entranceScale = 1
+            }
+        }
         .onExitCommand { state.escape() }
         .onMoveCommand { direction in
             switch direction {
@@ -166,8 +186,14 @@ struct PaletteView: View {
         } else if state.mode == .emoji {
             EmojiScreenView(state: state)
         } else if state.rows.isEmpty {
-            EmptyPaletteView(mode: state.mode, clipboardEnabled: state.core?.settings.clipboardEnabled == true)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if state.mode == .apps, state.core?.launcher.entries.isEmpty == true,
+               state.query.isEmpty {
+                IndexingView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                EmptyPaletteView(mode: state.mode, clipboardEnabled: state.core?.settings.clipboardEnabled == true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         } else {
             resultsList
         }
@@ -291,29 +317,42 @@ struct PaletteView: View {
         .animation(.easeOut(duration: 0.15), value: state.notice)
     }
 
+    /// 底栏 Tab 提示：实际下一屏的短标签（剪贴板禁用时自动跳到文件）。
+    private var shortNextLabel: String {
+        let enabled = state.core?.settings.clipboardEnabled == true
+        let target = state.mode.resolvedNext(clipboardEnabled: enabled)
+        switch target {
+        case .apps: return L10n.t("应用", "Apps")
+        case .clipboard: return L10n.t("剪贴板", "Clip")
+        case .files: return L10n.t("文件", "Files")
+        case .emoji: return L10n.t("表情", "Emoji")
+        case .chat: return L10n.t("对话", "Chat")
+        }
+    }
+
     @ViewBuilder
     private var footerHints: some View {
         switch state.mode {
         case .apps:
             KeyCapHint(key: "↑↓", label: L10n.t("选择", "Select"))
             KeyCapHint(key: "↵", label: L10n.t("打开", "Open"))
-            KeyCapHint(key: "tab", label: L10n.t("剪贴板", "Clip"))
+            KeyCapHint(key: "tab", label: shortNextLabel)
             KeyCapHint(key: "esc", label: L10n.t("关闭", "Esc"))
         case .clipboard:
             KeyCapHint(key: "↵", label: state.core?.settings.clipboardDefaultAction == .copy ? L10n.t("复制", "Copy") : L10n.t("粘贴", "Paste"))
             KeyCapHint(key: "⌘↵", label: state.core?.settings.clipboardDefaultAction == .copy ? L10n.t("粘贴", "Paste") : L10n.t("复制", "Copy"))
             KeyCapHint(key: "⌘P", label: L10n.t("固定", "Pin"))
             KeyCapHint(key: "⌫", label: L10n.t("删除", "Del"))
-            KeyCapHint(key: "tab", label: L10n.t("文件", "Files"))
+            KeyCapHint(key: "tab", label: shortNextLabel)
             KeyCapHint(key: "esc", label: L10n.t("关闭", "Esc"))
         case .files:
             KeyCapHint(key: "↵", label: L10n.t("打开", "Open"))
             KeyCapHint(key: "⌘↵", label: L10n.t("Finder 显示", "Reveal"))
-            KeyCapHint(key: "tab", label: L10n.t("表情", "Emoji"))
+            KeyCapHint(key: "tab", label: shortNextLabel)
             KeyCapHint(key: "esc", label: L10n.t("关闭", "Esc"))
         case .emoji:
             KeyCapHint(key: "↵", label: L10n.t("复制", "Copy"))
-            KeyCapHint(key: "tab", label: L10n.t("应用", "Apps"))
+            KeyCapHint(key: "tab", label: shortNextLabel)
             KeyCapHint(key: "esc", label: L10n.t("关闭", "Esc"))
         case .chat:
             KeyCapHint(key: "↵", label: state.chatStreaming ? L10n.t("生成中…", "Streaming…") : L10n.t("发送", "Send"))
@@ -321,7 +360,7 @@ struct PaletteView: View {
                 KeyCapHint(key: "⌘V", label: L10n.t("附图", "Image"))
             }
             KeyCapHint(key: "esc", label: L10n.t("返回", "Back"))
-            KeyCapHint(key: "tab", label: L10n.t("应用", "Apps"))
+            KeyCapHint(key: "tab", label: shortNextLabel)
         }
     }
 }
@@ -994,5 +1033,23 @@ struct EmojiScreenView: View {
 
     private func index(of entry: CommandEntry) -> Int {
         state.rows.firstIndex(where: { $0.id == entry.id }) ?? 0
+    }
+}
+
+
+/// 首次启动应用索引扫描中的占位视图。
+struct IndexingView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.large)
+            Text(L10n.t("正在索引应用…", "Indexing apps…"))
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(L10n.t("首次启动需要几秒钟", "Takes a few seconds on first launch"))
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
