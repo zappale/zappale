@@ -38,15 +38,28 @@ macOS 原生轻量启动器。Swift 6 / SwiftUI / AppKit，零第三方依赖。
 ```sh
 swift build          # 编译
 swift test           # 56 项单元测试
-scripts/build-app.sh # 组装 build/QuickAgent.app（release + 自签名）
+scripts/build-app.sh # 组装 build/zappale.app（release + 签名，默认 ad-hoc）
 ```
+
+本地正式签名（可选）：
+
+```sh
+SIGN_IDENTITY="Developer ID Application: ..." APPLE_TEAM_ID="..." scripts/build-app.sh
+```
+
+### 分支与 CI
+
+- `develop`：日常开发分支；`main`：可发布分支
+- push / PR 自动跑 [CI](.github/workflows/ci.yml)：构建 + 全量单测 + 打包冒烟
+- 推送 `v*` tag 触发 [Release](.github/workflows/release.yml)：导入证书签名构建 + 公证 + 发布
+- macOS 构建证书配置：[docs/ci-signing.md](docs/ci-signing.md)
 
 ## 安装运行
 
 ```sh
 scripts/build-app.sh
-cp -R build/QuickAgent.app /Applications/
-open /Applications/QuickAgent.app
+cp -R build/zappale.app /Applications/
+open /Applications/zappale.app
 ```
 
 应用常驻菜单栏，**双击 ⌘** 或 ⌥Space 呼出面板（可在设置中更换）。语言切换：设置 → 通用 → 界面语言。
