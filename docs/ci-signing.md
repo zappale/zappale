@@ -67,7 +67,7 @@ git tag v0.6.1
 git push origin main --tags      # push tag 触发 Release 工作流
 ```
 
-构建产物会上传为 workflow artifact；tag 触发的构建同时创建 GitHub Release 并附带 `zappale-<version>.zip`。
+构建产物会上传为 workflow artifact；tag 触发的构建同时创建 GitHub Release 并附带 `zappale-<version>.zip` 与拖拽安装式 `zappale-<version>.dmg`（DMG 同样签名、公证并装订）。
 
 ## 降级行为
 

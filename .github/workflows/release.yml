@@ -94,8 +94,15 @@ jobs:
           echo "::warning::未配置签名 Secrets，本次构建为 ad-hoc 签名（不可分发）"
           ./scripts/build-app.sh
 
-      # ── 公证（notarization，仅 Developer ID 证书时有意义）────────────────
-      - name: Notarize & staple
+      # ── 版本号（供后续步骤引用）───────────────────────────────────────
+      - name: Determine version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF" == refs/tags/* ]] || VERSION="untagged-$(git rev-parse --short HEAD)"
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # ── 公证 app（notarization，仅 Developer ID 证书时有意义）────────────────
+      - name: Notarize & staple app
         if: env.HAS_CERT == 'true' && env.HAS_NOTARY == 'true' && inputs.skip_notarization != true
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -116,26 +123,52 @@ jobs:
           xcrun stapler staple "build/${APP_NAME}.app"
           spctl -a -t exec -vv "build/${APP_NAME}.app" || true
 
+      # ── 打包 DMG（拖拽安装式：app + Applications 快捷方式）──────────────
+      - name: Create DMG
+        run: |
+          STAGING="$(mktemp -d)"
+          cp -R "build/${APP_NAME}.app" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "$APP_NAME" \
+            -srcfolder "$STAGING" -ov -format UDZO \
+            "$RUNNER_TEMP/${APP_NAME}-${APP_VERSION}.dmg"
+
+      - name: Sign DMG
+        if: env.HAS_CERT == 'true'
+        env:
+          SIGN_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+        run: |
+          DMG="$RUNNER_TEMP/${APP_NAME}-${APP_VERSION}.dmg"
+          codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG"
+          codesign --verify --verbose=2 "$DMG"
+
+      - name: Notarize & staple DMG
+        if: env.HAS_CERT == 'true' && env.HAS_NOTARY == 'true' && inputs.skip_notarization != true
+        run: |
+          DMG="$RUNNER_TEMP/${APP_NAME}-${APP_VERSION}.dmg"
+          xcrun notarytool submit "$DMG" --keychain-profile "notary-profile" --wait
+          xcrun stapler staple "$DMG"
+
       # ── 打包上传 ────────────────────────────────────────────────────────
       - name: Zip app bundle
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          [[ "$GITHUB_REF" == refs/tags/* ]] || VERSION="untagged-$(git rev-parse --short HEAD)"
-          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
-          ditto -c -k --keepParent "build/${APP_NAME}.app" "$RUNNER_TEMP/${APP_NAME}-${VERSION}.zip"
+        run: ditto -c -k --keepParent "build/${APP_NAME}.app" "$RUNNER_TEMP/${APP_NAME}-${APP_VERSION}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: zappale-macos-${{ env.APP_VERSION }}
-          path: ${{ runner.temp }}/${{ env.APP_NAME }}-${{ env.APP_VERSION }}.zip
+          path: |
+            ${{ runner.temp }}/${{ env.APP_NAME }}-${{ env.APP_VERSION }}.zip
+            ${{ runner.temp }}/${{ env.APP_NAME }}-${{ env.APP_VERSION }}.dmg
           if-no-files-found: error
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ runner.temp }}/${{ env.APP_NAME }}-${{ env.APP_VERSION }}.zip
+          files: |
+            ${{ runner.temp }}/${{ env.APP_NAME }}-${{ env.APP_VERSION }}.zip
+            ${{ runner.temp }}/${{ env.APP_NAME }}-${{ env.APP_VERSION }}.dmg
           generate_release_notes: true
 
       # ── 清理钥匙串 ──────────────────────────────────────────────────────
